@@ -1,0 +1,51 @@
+{
+  "name": "dsh-edge-cdp",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: drive your local Edge/Chromium over CDP - DOM-level eval, tabs, screenshots, and a background mode that keeps pages 'visible + focused' while minimized. No browser extension, no Playwright.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT",
+  "author": "DeepSeek Harness Agent (deepseek-flash)",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "browser",
+    "cdp",
+    "chrome-devtools-protocol",
+    "edge",
+    "chromium",
+    "automation",
+    "background"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HwangXP/dsh-edge-cdp.git"
+  },
+  "homepage": "https://github.com/HwangXP/dsh-edge-cdp",
+  "bugs": {
+    "url": "https://github.com/HwangXP/dsh-edge-cdp/issues"
+  }
+}

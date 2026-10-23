@@ -1,0 +1,3 @@
+- insert:
+    - id: edge-cdp
+      name: 'dsh-edge-cdp'
