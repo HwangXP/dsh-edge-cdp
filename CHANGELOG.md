@@ -3,7 +3,7 @@
 ## 0.1.3 — 2026-10-24
 
 ### 新增
-- **`edge_mute`**：把当前标签页的音视频静音（递归进同源 iframe，超星那类两层嵌套播放器也能静音），并通过
+- **`edge_mute`**：把当前标签页的音视频静音（递归进同源 iframe，多级 iframe 嵌套的播放器也能静音），并通过
   `Page.addScriptToEvaluateOnNewDocument` 注册到**每个新文档**——之后导航到新页面依然自动静音。
   实现细节：重写 `HTMLMediaElement.prototype.play`，任何音视频一播放就强制 `muted = true, volume = 0`，
   再加 `DOMContentLoaded` 与 1.5s 定时兜底扫描。

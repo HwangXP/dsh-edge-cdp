@@ -10,7 +10,7 @@ License: MIT
 
 ## 它解决什么问题
 
-很多"挂课/挂时长"类站点（超星学习通、各类在线培训平台）会检测"你是否在看"：
+很多在线课程与培训平台（各类学习平台、在线培训系统等）会检测"你是否在看"：
 
 - `document.hidden` / `document.visibilityState`
 - `window.blur` / `visibilitychange` 事件
