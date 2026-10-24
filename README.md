@@ -59,17 +59,27 @@ dsh plugin --profile desktop add "file:/绝对路径/dsh-edge-cdp"
 | `edge_click` | 按 CSS 选择器点击（滚动到可见后原生 click）|
 | `edge_type` | 按 CSS 选择器填值（原生 setter + input/change，React/Vue 受控组件可生效）|
 | `edge_screenshot` | 截图存盘（能读 DOM 就别用这个）|
-| `edge_background_mode` | **后台模式**：长连接 + 焦点模拟 + 心跳，最小化也能被当成在前台 |
+| **`edge_background_mode`** | **后台模式**：长连接 + 焦点模拟 + 心跳（每次心跳重贴，导航后不失效），最小化也能被当成在前台 |
+| **`edge_mute`** | **静音**：递归静音当前页（含同源 iframe），并注册到每个新文档——换页后依然静音 |
 
 ## 典型用法
 
 ```text
 edge_launch()
 edge_nav("https://example.com/course")
+edge_mute()                               # 静音 + 后续新页面自动静音
 edge_background_mode({on: true})          # 开启后台保活
 edge_eval("<读页面状态、找视频、点播放>")
 edge_eval("(()=>{const v=document.querySelector('video'); if(v&&v.paused)v.play(); return v.currentTime})()")
 ```
+
+## 变更历史
+
+见 [CHANGELOG.md](./CHANGELOG.md)。要点：
+
+- `0.1.3` 新增 `edge_mute`（静音 + 新页面自动静音）
+- `0.1.2` 修复后台模式在页面导航后失效（心跳时重贴焦点模拟）
+- `0.1.1` 持久 CDP 会话，`Emulation` 设置不再随调用丢失
 
 ## 配置（cordis.patch.yml）
 
