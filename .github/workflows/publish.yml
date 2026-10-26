@@ -1,0 +1,38 @@
+name: Publish to npm
+
+# 触发方式：
+#   1) 在 GitHub 上发布 Release（推荐）
+#   2) 手动 Run workflow
+#
+# 认证方式：npm Trusted Publishing（OIDC）
+#   —— 不需要 NPM_TOKEN，不需要 2FA 验证码。
+#   前提：在 npmjs.com 的包设置里把「本仓库 + 本文件名」登记为 Trusted Publisher。
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # 必需：向 npm 换取 OIDC 令牌
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24 # 自带 npm 11.x，支持 OIDC 可信发布
+          registry-url: https://registry.npmjs.org
+
+      - name: Show version
+        run: node -p "'publishing ' + require('./package.json').name + '@' + require('./package.json').version"
+
+      - name: Publish
+        # Trusted Publishing：不要设置 NODE_AUTH_TOKEN，npm 会自动走 OIDC
+        run: npm publish --provenance --access public

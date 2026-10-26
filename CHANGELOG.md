@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5 — 2026-10-26
+
+### 新增
+- **npm 自动发布**：`.github/workflows/publish.yml`，用 npm **Trusted Publishing（OIDC）** 发布——
+  不需要 NPM_TOKEN、不需要 2FA 验证码。触发方式：GitHub 发布 Release，或手动 Run workflow。
+- 发布带 `--provenance`（来源证明），npm 页面会显示"此包由该仓库的此提交构建"。
+
+### 说明
+- 0.1.4 曾在 npm 上留下未完成的半成品记录（元数据在、tarball 不可取），故跳到 **0.1.5** 重新发布。
+
 ## 0.1.3 — 2026-10-24
 
 ### 新增

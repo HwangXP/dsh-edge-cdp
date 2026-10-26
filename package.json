@@ -1,6 +1,6 @@
 {
   "name": "dsh-edge-cdp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DeepSeek Harness plugin: drive your local Edge/Chromium over CDP - DOM-level eval, tabs, screenshots, and a background mode that keeps pages 'visible + focused' while minimized. No browser extension, no Playwright.",
   "type": "module",
   "main": "lib/index.js",
