@@ -54,6 +54,12 @@ const EXPECTED = [
 	"edge_key",
 	"edge_network",
 	"edge_wait",
+	"edge_tab",
+	"edge_video",
+	"edge_frames",
+	"edge_keep_playing",
+	"edge_cookies",
+	"edge_download",
 ];
 
 if (name !== "edge-cdp") problems.push(`导出 name 不对: ${name}`);

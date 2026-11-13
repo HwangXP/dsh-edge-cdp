@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0 — 2026-11-13
+
+第三次更新，主题是**长任务编排**：0.2.0 补齐了「单步操作」，这一版补「谁来盯几小时」。
+起因是一次真实刷课：40 分钟一个视频、几十个任务点，靠 agent 反复调用工具要几百次，实际是靠外挂 Python 脚本跑的。
+
+### 新增
+
+- **`edge_keep_playing`（播放守护，本版核心）**：给一组页面（URL 子串，逗号分隔，不给则接管当前所有页面），
+  插件自己每 `everyMs`（默认 4s）检查一遍视频：暂停就续播；`currentTime` 连续 `stallTicks`（默认 3）次
+  不前进就判卡死并自动重载页面；`maxMinutes` 可到点自停。`op=status` 返回心跳次数、
+  续播/重载/卡死/错误计数和最近 20 条日志。
+  **意义**：把「agent 反复调用」变成「插件自己盯」，一个长视频只需 start 一次。
+- **`edge_video`**：`<video>` 的一等公民。`op=list` 列出所有视频（会钻进同源 iframe）及
+  `currentTime / duration / paused / ended`；`play / pause / seek / rate / mute / unmute`
+  按 `path`（iframe 索引链）+ `index` 操作。
+- **`edge_tab`**：`open`（新开标签页，不是窗口）/ `close` / `activate` / `list`。
+  **`activate` 是关键**：新开的窗口/标签页默认在后台，有些播放器在后台根本不初始化（一直空白），
+  必须提到前台一次——这条是实测踩出来的。
+- **`edge_frames`**：同源 iframe 寻址。`op=list` 递归列出所有 iframe（`path / src / id / 是否可读`），
+  `op=eval` 在指定 `path` 里求值，表达式里用 `doc` 指代那个 document。
+  跨域 iframe 仍然走 `edge_attach`——两者合起来才覆盖全部 iframe。
+- **`edge_cookies`**：`get`（可按 urls 过滤、`includeValues=false` 只列名字）/ `set` / `clear`。
+- **`edge_download`**：走浏览器下载通道（**保留登录态**，fetch 做不到），可指定 `savePath`。
+
+### 修复
+
+- **`download` 下到 `savePath` 所在目录会被无关文件污染**：曾挑中一个 0 字节文件，结果是
+  「复制成功但文件是空的」。现在一律下到全新临时目录再复制过去。
+
+### 自测（本机 2026-11-13 实测）
+
+- `scripts/selftest.mjs` **21/21 通过**（新增 9 条：tab 全流程、video list、mute/rate、
+  play 后 currentTime 前进、frames list/eval、keep_playing 续播、cookies 读写、download）。
+  其中 keep_playing 与 download 都是真跑：前者用一段 20 秒本地视频（ffmpeg testsrc 生成），
+  后者用自带的 HTTP 服务返回 `Content-Disposition: attachment`。
+- `test/register.mjs` **23/23 工具**通过宿主 schema 子集校验。
+
 ## 0.2.0 — 2026-11-13
 
 第二次大更新：把「只能 eval + JS 点击」升级成「能模拟真人输入、能进跨域 iframe、能开窗口、能处理弹窗与网络」。

@@ -27,7 +27,23 @@ import {
 	responseBody,
 	waitFor,
 	httpJson,
+	openTab,
+	closeTarget,
+	activateTarget,
+	collectVideos,
+	controlVideo,
+	listFrames,
+	evalInFrame,
+	getCookies,
+	setCookie,
+	startGuard,
+	stopGuard,
+	guardStatus,
+	download,
 } from "../lib/cdp.js";
+import { stat as fsStat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const PORT = Number(process.env.EDGE_PORT ?? 9222);
 const TIMEOUT = 15000;
@@ -202,6 +218,139 @@ add("waitFor 超时返回 ok:false 而不是抛异常", async () => {
 	const r = await withPage(PORT, TIMEOUT, {}, async (cdp) => await waitFor(cdp, { selector: "#never-appears", timeoutMs: 800, intervalMs: 100 }));
 	assert(r.ok === false, "超时应当返回 ok:false");
 	return `${r.elapsedMs} ms 超时`;
+});
+
+// ---------------- 0.3.0 用例 ----------------
+
+add("tab open / list / activate / close", async () => {
+	const r = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		const { targetId } = await openTab(cdp, "about:blank");
+		await new Promise((r2) => setTimeout(r2, 700));
+		const list = await pages(PORT);
+		const found = list.some((p) => p.id === targetId);
+		await activateTarget(cdp, targetId);
+		await closeTarget(cdp, targetId);
+		return { targetId, found, total: list.length };
+	});
+	assert(r.found, "新开的标签页没出现在 /json 里");
+	return `${r.targetId.slice(0, 8)} · 当时共 ${r.total} 个页面`;
+});
+
+add("video list 找到 <video>", async () => {
+	const vids = await withPage(PORT, TIMEOUT, {}, async (cdp) => await collectVideos(cdp, {}));
+	assert(vids.length >= 1, `没找到 video（${vids.length}）`);
+	return `${vids.length} 个 · duration=${Math.round(vids[0].duration)}s`;
+});
+
+add("video mute / unmute / rate", async () => {
+	const r = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		await controlVideo(cdp, { index: 0, action: "mute" });
+		const m = await collectVideos(cdp, {});
+		await controlVideo(cdp, { index: 0, action: "unmute" });
+		const u = await collectVideos(cdp, {});
+		await controlVideo(cdp, { index: 0, action: "rate", value: 1.5 });
+		const r2 = await collectVideos(cdp, {});
+		await controlVideo(cdp, { index: 0, action: "rate", value: 1 });
+		return { muted: m[0].muted, unmuted: u[0].muted, rate: r2[0].rate };
+	});
+	assert(r.muted === true && r.unmuted === false, "静音切换不生效");
+	assert(Math.abs(r.rate - 1.5) < 0.01, `倍速不对: ${r.rate}`);
+	return "mute / unmute / rate 都生效";
+});
+
+add("video play 后 currentTime 前进", async () => {
+	const ct = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		await controlVideo(cdp, { index: 0, action: "seek", value: 0 });
+		await controlVideo(cdp, { index: 0, action: "play" });
+		let cur = 0;
+		for (let i = 0; i < 20; i += 1) {
+			await new Promise((r) => setTimeout(r, 500));
+			const v = await collectVideos(cdp, {});
+			cur = v[0]?.currentTime ?? 0;
+			if (cur > 1.2) break;
+		}
+		return cur;
+	});
+	assert(ct > 1.2, `播放没前进: currentTime=${ct}`);
+	return `${ct.toFixed(1)}s`;
+});
+
+add("frames list 找到同源 iframe", async () => {
+	const list = await withPage(PORT, TIMEOUT, {}, async (cdp) => await listFrames(cdp));
+	assert(list.length >= 1, `没找到 iframe（${list.length}）`);
+	assert(list.some((f) => f.accessible), "没有可读的同源 iframe");
+	return `${list.length} 个（可读 ${list.filter((f) => f.accessible).length}）`;
+});
+
+add("frames eval 在同源 iframe 内", async () => {
+	const v = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		const list = await listFrames(cdp);
+		const f = list.find((x) => x.accessible);
+		assert(f, "没有可读 iframe");
+		return await evalInFrame(cdp, { path: f.path, expression: "doc.getElementById('inner-p').textContent" });
+	});
+	assert(String(v).includes("hello inner"), `读到: ${v}`);
+	return String(v);
+});
+
+add("keep_playing 能把暂停的视频续上", async () => {
+	await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		await controlVideo(cdp, { index: 0, action: "seek", value: 0 });
+		await controlVideo(cdp, { index: 0, action: "pause" });
+	});
+	startGuard(PORT, TIMEOUT, "selftest", { targets: ["ooptif_test"], everyMs: 1200, stallTicks: 8 });
+	let ct = 0;
+	for (let i = 0; i < 15; i += 1) {
+		await new Promise((r) => setTimeout(r, 1000));
+		ct = await withPage(PORT, TIMEOUT, {}, async (cdp) => (await collectVideos(cdp, {}))[0]?.currentTime ?? 0);
+		if (ct > 2) break;
+	}
+	const st = guardStatus("selftest");
+	stopGuard("selftest");
+	await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		await controlVideo(cdp, { index: 0, action: "pause" }).catch(() => {});
+	});
+	assert(st.stats.plays >= 1, "守护没有执行续播");
+	assert(ct > 2, `续播后没前进: ${ct}`);
+	return `plays=${st.stats.plays} · currentTime=${ct.toFixed(1)}s`;
+});
+
+add("cookies set / get", async () => {
+	const r = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		const okSet = await setCookie(cdp, { name: "__selftest", value: "1", url: "https://example.com", path: "/" });
+		const list = await getCookies(cdp, { urls: ["https://example.com"] });
+		return { okSet, hit: Boolean(list.find((c) => c.name === "__selftest")), total: list.length };
+	});
+	assert(r.okSet && r.hit, "写进去的 cookie 没读回来");
+	return `example.com 下共 ${r.total} 条`;
+});
+
+add("download 存到本地文件", async () => {
+	// 起一个本地服务，带 Content-Disposition: attachment —— 浏览器才会走"下载"而不是内联渲染
+	const { createServer } = await import("node:http");
+	const body = "edge-cdp download selftest ".repeat(80);
+	const server = createServer((req, res) => {
+		res.writeHead(200, {
+			"Content-Type": "application/octet-stream",
+			"Content-Disposition": 'attachment; filename="selftest.bin"',
+			"Content-Length": Buffer.byteLength(body),
+		});
+		res.end(body);
+	});
+	await new Promise((r) => server.listen(0, "127.0.0.1", r));
+	const port = server.address().port;
+	const target = join(tmpdir(), `edge-dl-selftest-${Date.now()}.bin`);
+	try {
+		const r = await withPage(PORT, TIMEOUT, {}, async (cdp) =>
+			await download(cdp, { url: `http://127.0.0.1:${port}/file`, savePath: target, timeoutMs: 30000 }),
+		);
+		assert(r.ok, `下载失败: ${r.reason ?? ""}`);
+		const st = await fsStat(target);
+		assert(st.size === Buffer.byteLength(body), `大小不对: ${st.size} vs ${Buffer.byteLength(body)}`);
+		return `${st.size} 字节`;
+	} finally {
+		server.close();
+	}
 });
 
 // ---------------- 主流程 ----------------
