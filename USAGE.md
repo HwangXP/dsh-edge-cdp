@@ -57,9 +57,35 @@ edge_autoplay({
 
 1. 每隔 `everyMs` 在**列表页**上执行一次 `nextJs`；
 2. 拿到 `{url,title}` 就打开它（自动选/自动开一个工作标签页）并播放；
-3. 视频到头（或 `ended`）就记一次完成、清空条目，下一拍继续找下一条；
+3. **页内所有视频都播完**（或 `ended`）才算这一条完成，清空条目，下一拍继续找下一条；
 4. `nextJs` 返回 `null` → 自己停，`lastReason = 队列空`；
-5. 25 秒还等不到 `<video>` → 记一次失败并**跳过**，不让一条坏数据卡死整队。
+5. 页面里没有视频时，如果设了 `dwellSec` 就地停留够秒数；没设则 25 秒后记一次失败并**跳过**。
+
+### 三种页面形态怎么配
+
+| 形态 | 配法 |
+|---|---|
+| 一页一个视频 | 默认，什么都不用加 |
+| **一页多个视频** | 默认支持——全部播完才算完成 |
+| **文档 / PPT 类（没有 `<video>`）** | `dwellSec: 30`（秒），`dwellScroll` 默认边停边往下滚 |
+| **SPA：点「下一节」不换 URL** | 改用 `advanceJs`（见下） |
+
+文档类只能「停够时间」——它的完成条件本来就是你看了多久，插件不会假装瞬间读完。
+
+### SPA：URL 不变怎么推进
+
+有的站点换了内容但 URL 一个字都不变，`nextJs` 给不出新地址。这时用 `advanceJs`：
+
+```text
+edge_autoplay({
+  op: "start",
+  advanceJs: "(() => { const b = document.querySelector('#next'); if (!b || b.disabled) return 'null'; b.click(); return b.disabled ? 'null' : 'true'; })()",
+  everyMs: 5000
+})
+```
+
+规则很简单：**返回真值 = 已进入下一节；返回 `null`/`false` = 队列结束**。
+只给 `advanceJs`、不给 `nextJs` 时，从当前页开始播。
 
 `nextJs` 可以返回 Promise（内部会 await），所以查接口也行：
 

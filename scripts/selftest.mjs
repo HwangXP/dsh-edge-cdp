@@ -96,16 +96,29 @@ add("status", async () => {
 	return "调试端口在线";
 });
 
-add("setup 打开测试页", async () => {
-	// 每次都先把主页面导航回测试页：后面的用例会把它带去别的页面（autoplay 会去假课程站），
-	// 不复位的话下一次全量跑第一条就会失败。
+add("setup 清理残留页并用测试页作主页", async () => {
+	// 每次都先把浏览器恢复成"只有一页测试页"的状态：
+	// 后面的用例会开新标签/新窗口（tab、autoplay），上一次留下的残留页会让 pages()[0] 指错。
 	const url = new URL("../../ooptif_test.html", import.meta.url).href;
-	await withPage(PORT, TIMEOUT, {}, async (cdp) => {
-		await cdp.send("Page.enable");
+	const closed = await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		const list = await pages(PORT);
+		const keep = list[0];
+		let n = 0;
+		for (const p of list.slice(1)) {
+			try {
+				await cdp.send("Target.closeTarget", { targetId: p.id });
+				n += 1;
+			} catch {
+				/* ignore */
+			}
+		}
+		await cdp.send("Target.activateTarget", { targetId: keep.id }).catch(() => {});
+		await cdp.send("Page.enable").catch(() => {});
 		await cdp.send("Page.navigate", { url });
+		return n;
 	});
-	await new Promise((r) => setTimeout(r, 2000));
-	return decodeURIComponent(url).split("/").pop();
+	await new Promise((r) => setTimeout(r, 2500));
+	return `${decodeURIComponent(url).split("/").pop()}（关掉 ${closed} 个残留页）`;
 });
 
 add("pages + pickPage", async () => {
@@ -370,19 +383,20 @@ add("download 存到本地文件", async () => {
 
 // ---------------- 0.4.0：队列调度 ----------------
 
-add("autoplay 自动刷完队列（3 节课）", async () => {
-	// 起一个假的"课程站"：/list.html 是列表页，/next 给出下一个视频页，/v1..v3 各含一段 2 秒视频
+add("autoplay 自动刷完队列（单视频 / 双视频 / 文档停留）", async () => {
+	// 假课程站：/list.html 列表页，/next 给出下一个页面；
+	// v1 = 单视频，v2 = 双视频（考"一页多视频"），v3 = 纯文档（考 dwellSec）
 	const { createServer } = await import("node:http");
 	const mp4 = await readFile(new URL("../../selftest_short.mp4", import.meta.url));
 	let served = 0;
 	let srvPort = 0;
 	const server = createServer((req, res) => {
 		const u = String(req.url ?? "/").split("?")[0];
-		if (u === "/list.html") {
+		const html = (s) => {
 			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-			res.end("<h1>假课程列表</h1><p>next() 由测试提供</p>");
-			return;
-		}
+			res.end(s);
+		};
+		if (u === "/list.html") return html("<h1>假课程列表</h1><p>next() 由测试提供</p>");
 		if (u === "/next") {
 			served += 1;
 			const body = served <= 3 ? JSON.stringify({ url: `http://127.0.0.1:${srvPort}/v${served}.html`, title: `第 ${served} 节` }) : "null";
@@ -390,11 +404,13 @@ add("autoplay 自动刷完队列（3 节课）", async () => {
 			res.end(body);
 			return;
 		}
-		if (u.startsWith("/v")) {
-			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-			res.end(`<h1>${u}</h1><video src="/short.mp4" muted playsinline width="200"></video>`);
-			return;
-		}
+		if (u === "/v1.html") return html(`<h1>v1 单视频</h1><video src="/short.mp4" muted playsinline width="200"></video>`);
+		if (u === "/v2.html")
+			return html(
+				`<h1>v2 双视频</h1><video src="/short.mp4" muted playsinline width="200"></video>` +
+					`<video src="/short.mp4" muted playsinline width="200"></video>`,
+			);
+		if (u === "/v3.html") return html(`<h1>v3 文档类（无视频）</h1><p>${"文档正文 ".repeat(400)}</p>`);
 		if (u === "/short.mp4") {
 			const range = req.headers.range;
 			if (range) {
@@ -430,17 +446,77 @@ add("autoplay 自动刷完队列（3 节课）", async () => {
 			nextJs: "(async () => JSON.stringify(await (await fetch('/next')).json()))()",
 			everyMs: 1200,
 			doneTolerance: 1,
+			dwellSec: 3,
 		});
 		let st = autoplayStatus("selftest-auto");
-		for (let i = 0; i < 60 && st.running; i += 1) {
+		for (let i = 0; i < 90 && st.running; i += 1) {
 			await new Promise((r) => setTimeout(r, 1000));
 			st = autoplayStatus("selftest-auto");
 		}
 		stopAutoplay("selftest-auto");
-		const tail = (st.log ?? []).slice(-4).map((x) => x.msg).join(" | ");
-		assert(st.doneCount === 3, `完成数不对: ${st.doneCount}（${tail}）`);
+		const logText = (st.log ?? []).map((x) => x.msg).join(" | ");
+		assert(st.doneCount === 3, `完成数不对: ${st.doneCount}（${logText.slice(-300)}）`);
 		assert(String(st.lastReason).includes("队列空"), `结束原因不对: ${st.lastReason}`);
-		return `doneCount=3 · ${st.lastReason} · ${st.elapsedSec}s`;
+		assert(logText.includes("停留达标"), "文档类没有走 dwellSec 停留");
+		assert(logText.includes("2 个视频全部播完"), "多视频页没有全部播完");
+		return `doneCount=3（含双视频 + 文档停留） · ${st.lastReason} · ${st.elapsedSec}s`;
+	} finally {
+		server.close();
+	}
+});
+
+add("autoplay 用 advanceJs 推进（SPA 不换 URL）", async () => {
+	// 页面 URL 不变，"下一节"由按钮换视频 —— 这正是 nextJs 覆盖不了的形态
+	const { createServer } = await import("node:http");
+	const mp4 = await readFile(new URL("../../selftest_short.mp4", import.meta.url));
+	let srvPort = 0;
+	const server = createServer((req, res) => {
+		const u = String(req.url ?? "/").split("?")[0];
+		if (u === "/spa.html") {
+			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+			res.end(
+				`<!doctype html><meta charset="utf-8"><h1>spa</h1>` +
+					`<video id="v" src="/short.mp4" muted playsinline width="200"></video>` +
+					`<button id="next">下一节</button>` +
+					`<script>window.__n=0;document.getElementById('next').onclick=()=>{window.__n+=1;` +
+					`if(window.__n>=2){document.getElementById('next').disabled=true;return;}` +
+					`const v=document.getElementById('v');v.src='/short.mp4?n='+window.__n;v.play();};</script>`,
+			);
+			return;
+		}
+		if (u === "/short.mp4") {
+			res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": mp4.length, "Accept-Ranges": "bytes" });
+			res.end(mp4);
+			return;
+		}
+		res.writeHead(404);
+		res.end("no");
+	});
+	await new Promise((r) => server.listen(0, "127.0.0.1", r));
+	srvPort = server.address().port;
+	try {
+		await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+			await cdp.send("Page.enable");
+			await cdp.send("Page.navigate", { url: `http://127.0.0.1:${srvPort}/spa.html` });
+		});
+		await new Promise((r) => setTimeout(r, 1500));
+		startAutoplay(PORT, TIMEOUT, "selftest-spa", {
+			listMatch: "spa.html",
+			advanceJs:
+				"(() => { const b = document.querySelector('#next'); if (!b || b.disabled) return 'null'; b.click(); return b.disabled ? 'null' : 'true'; })()",
+			everyMs: 1200,
+			doneTolerance: 1,
+		});
+		let st = autoplayStatus("selftest-spa");
+		for (let i = 0; i < 90 && st.running; i += 1) {
+			await new Promise((r) => setTimeout(r, 1000));
+			st = autoplayStatus("selftest-spa");
+		}
+		stopAutoplay("selftest-spa");
+		const logText = (st.log ?? []).map((x) => x.msg).join(" | ");
+		assert(st.doneCount === 2, `完成数不对: ${st.doneCount}（${logText.slice(-300)}）`);
+		assert(String(st.lastReason).includes("advanceJs 返回空"), `结束原因不对: ${st.lastReason}`);
+		return `doneCount=2（URL 未变） · ${st.lastReason}`;
 	} finally {
 		server.close();
 	}

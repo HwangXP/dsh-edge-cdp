@@ -1,7 +1,7 @@
 {
   "name": "dsh-edge-cdp",
-  "version": "0.4.0",
-  "description": "DeepSeek Harness plugin: drive your local Edge/Chromium over CDP - DOM eval, real mouse/keyboard, cross-origin iframes, windows, dialogs, network capture, video control, keep-playing guard, queue autoplay (auto-advance through a course list), cookies, downloads, and a background mode that keeps pages 'visible + focused' while minimized. No browser extension, no Playwright.",
+  "version": "0.5.0",
+  "description": "DeepSeek Harness plugin: drive your local Edge/Chromium over CDP - DOM eval, real mouse/keyboard, cross-origin iframes, windows, dialogs, network capture, video control, keep-playing guard, queue autoplay (multi-video pages, document dwell, SPA advance), cookies, downloads, and a background mode that keeps pages 'visible + focused' while minimized. No browser extension, no Playwright.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
