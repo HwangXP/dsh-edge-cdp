@@ -13,6 +13,7 @@
     "cordis.patch.yml",
     "scripts",
     "README.md",
+    "USAGE.md",
     "LICENSE"
   ],
   "dsh": {

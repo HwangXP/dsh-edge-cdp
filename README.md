@@ -8,6 +8,7 @@ License: MIT
 
 > 📘 **按场景的使用说明**（无人值守长播、一串页面自动播放、多窗口并行、卡住怎么排查）见
 > [USAGE.md](https://github.com/HwangXP/dsh-edge-cdp/blob/main/USAGE.md)。
+> 安装后它也在 `node_modules/dsh-edge-cdp/USAGE.md`（npm 页面只渲染本 README）。
 
 ---
 
