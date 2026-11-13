@@ -79,6 +79,7 @@ dsh plugin --profile desktop add "file:/绝对路径/dsh-edge-cdp"
 | **`edge_network`** | **抓请求**：start/list/body/stop/clear。用于“页面到底发了什么、接口返回了什么” |
 | **`edge_wait`** | **等状态**：等选择器出现 / JS 表达式为真，替代盲目 sleep；超时返回 `ok:false` 而不是抛异常 |
 | **`edge_keep_playing`** | **播放守护（刷课核心）**：插件自己每 4 秒检查一组页面，暂停就续播、停滞就重载。40 分钟的视频只需 start 一次，不用 agent 反复调用 |
+| **`edge_autoplay`** | **队列调度**：给列表页 + `nextJs`，插件自己找下一个、打开、播放、播完切下一条，队列空自停。keep-playing 管「别停」，它管「下一个是谁」 |
 | **`edge_video`** | `<video>` 一等公民：list / play / pause / seek / rate / mute / unmute（会钻进同源 iframe）|
 | **`edge_tab`** | 标签页 open / close / activate / list。**activate 很关键**：新开的窗口默认在后台，播放器可能不初始化 |
 | **`edge_frames`** | 同源 iframe 寻址：递归列出 + 在指定 `path` 内求值（跨域用 `edge_attach`）|
@@ -96,26 +97,48 @@ edge_eval("<读页面状态、找视频、点播放>")
 edge_eval("(()=>{const v=document.querySelector('video'); if(v&&v.paused)v.play(); return v.currentTime})()")
 ```
 
-### 刷课场景（0.3.0 起可以全自动）
+### 刷课场景（0.4.0 起可以全自动）
 
 ```text
-edge_window({url: "<第一个视频页>"})        # 并行播放用独立窗口，不用标签页
+edge_window({url: "<课程列表页>"})         # 并行播放用独立窗口，不用标签页
 edge_mute()
-edge_video({op: "play"})                   # 先确认能播
-edge_keep_playing({op: "start", targets: "course", everyMs: 4000})
-                                           # ↑ 之后插件自己盯：暂停续播、停滞重载
-edge_keep_playing({op: "status"})          # 随时看进度与日志
-edge_keep_playing({op: "stop"})
+
+# 一条命令接管整门课：自己找下一个任务点、打开、播放、播完切下一条、队列空自停
+edge_autoplay({
+  op: "start",
+  listMatch: "studentcourse",              # 列表页的 URL 子串
+  nextJs: "<在列表页求值，返回 {url,title} 或 null>",
+  everyMs: 5000
+})
+
+edge_autoplay({op: "status"})              # 已完成 N 条 + 当前条目 + 最近日志
+edge_autoplay({op: "stop"})
 ```
 
-一个 40 分钟的视频只需要 `start` 一次。以前这活儿得靠外挂 Python 脚本常驻跑。
+只想让单个视频别停、不需要排队时，用 `edge_keep_playing`：
+
+```text
+edge_keep_playing({op: "start", targets: "course", everyMs: 4000})
+```
+
+`nextJs` 由站点决定「下一个是谁」，插件不内置任何站点的解析逻辑，例如学习通：
+
+```js
+(() => {
+  const items = [...document.querySelectorAll('.chapter_item')];
+  const next = items.find(a => a.querySelector('.catalog_points_yi'));
+  return next ? JSON.stringify({ url: next.href, title: next.textContent.trim() }) : 'null';
+})()
+```
 
 ## 变更历史
 
 见 [CHANGELOG.md](./CHANGELOG.md)。要点：
 
-- `0.3.0`（本次）补**长任务编排**：`edge_keep_playing` 播放守护、`edge_video`、`edge_tab`、`edge_frames`、
-  `edge_cookies`、`edge_download`；工具 17 → 23 个，自测 21 项
+- `0.4.0`（本次）补上**「下一个是谁」**：`edge_autoplay` 队列调度——自己找下一个任务点、播完切下一条、
+  队列空自停；工具 23 → 24 个，自测 23 项
+- `0.3.0` 补**长任务编排的一半**：`edge_keep_playing` 播放守护、`edge_video`、`edge_tab`、`edge_frames`、
+  `edge_cookies`、`edge_download`；工具 17 → 23 个
 - `0.2.0` 补**单步操作**：真实鼠标/键盘、跨域 iframe、独立窗口、原生对话框、网络抓包、等待原语；
   工具 10 → 17 个，底层拆到 `lib/cdp.js`，新增两套自测（注册校验 + 真浏览器）
 - `0.1.3` 新增 `edge_mute`（静音 + 新页面自动静音）
@@ -184,7 +207,7 @@ python scripts/edge-bg.py --port 9222 --interval 10
 - **两套自测**（改代码后都要跑）：
 
 ```bash
-node test/register.mjs      # 不起浏览器：23 个工具的定义是否通过宿主 schema 子集校验
+node test/register.mjs      # 不起浏览器：24 个工具的定义是否通过宿主 schema 子集校验
 node scripts/selftest.mjs   # 打真实 Edge：跨域 iframe / 真实鼠标键盘 / 对话框 / 网络 / wait
 ```
 

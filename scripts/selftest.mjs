@@ -40,8 +40,11 @@ import {
 	stopGuard,
 	guardStatus,
 	download,
+	startAutoplay,
+	stopAutoplay,
+	autoplayStatus,
 } from "../lib/cdp.js";
-import { stat as fsStat } from "node:fs/promises";
+import { stat as fsStat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -91,6 +94,18 @@ const add = (name, fn) => suite.push({ name, fn });
 add("status", async () => {
 	assert(await httpJson(PORT, "/json/version"), "调试端口不可用");
 	return "调试端口在线";
+});
+
+add("setup 打开测试页", async () => {
+	// 每次都先把主页面导航回测试页：后面的用例会把它带去别的页面（autoplay 会去假课程站），
+	// 不复位的话下一次全量跑第一条就会失败。
+	const url = new URL("../../ooptif_test.html", import.meta.url).href;
+	await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+		await cdp.send("Page.enable");
+		await cdp.send("Page.navigate", { url });
+	});
+	await new Promise((r) => setTimeout(r, 2000));
+	return decodeURIComponent(url).split("/").pop();
 });
 
 add("pages + pickPage", async () => {
@@ -348,6 +363,84 @@ add("download 存到本地文件", async () => {
 		const st = await fsStat(target);
 		assert(st.size === Buffer.byteLength(body), `大小不对: ${st.size} vs ${Buffer.byteLength(body)}`);
 		return `${st.size} 字节`;
+	} finally {
+		server.close();
+	}
+});
+
+// ---------------- 0.4.0：队列调度 ----------------
+
+add("autoplay 自动刷完队列（3 节课）", async () => {
+	// 起一个假的"课程站"：/list.html 是列表页，/next 给出下一个视频页，/v1..v3 各含一段 2 秒视频
+	const { createServer } = await import("node:http");
+	const mp4 = await readFile(new URL("../../selftest_short.mp4", import.meta.url));
+	let served = 0;
+	let srvPort = 0;
+	const server = createServer((req, res) => {
+		const u = String(req.url ?? "/").split("?")[0];
+		if (u === "/list.html") {
+			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+			res.end("<h1>假课程列表</h1><p>next() 由测试提供</p>");
+			return;
+		}
+		if (u === "/next") {
+			served += 1;
+			const body = served <= 3 ? JSON.stringify({ url: `http://127.0.0.1:${srvPort}/v${served}.html`, title: `第 ${served} 节` }) : "null";
+			res.writeHead(200, { "Content-Type": "application/json" });
+			res.end(body);
+			return;
+		}
+		if (u.startsWith("/v")) {
+			res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+			res.end(`<h1>${u}</h1><video src="/short.mp4" muted playsinline width="200"></video>`);
+			return;
+		}
+		if (u === "/short.mp4") {
+			const range = req.headers.range;
+			if (range) {
+				const m = /bytes=(\d+)-(\d*)/.exec(range);
+				const start = Number(m?.[1] ?? 0);
+				const end = m?.[2] ? Number(m[2]) : mp4.length - 1;
+				res.writeHead(206, {
+					"Content-Type": "video/mp4",
+					"Content-Range": `bytes ${start}-${end}/${mp4.length}`,
+					"Accept-Ranges": "bytes",
+					"Content-Length": end - start + 1,
+				});
+				res.end(mp4.subarray(start, end + 1));
+				return;
+			}
+			res.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": mp4.length, "Accept-Ranges": "bytes" });
+			res.end(mp4);
+			return;
+		}
+		res.writeHead(404);
+		res.end("no");
+	});
+	await new Promise((r) => server.listen(0, "127.0.0.1", r));
+	srvPort = server.address().port;
+	try {
+		await withPage(PORT, TIMEOUT, {}, async (cdp) => {
+			await cdp.send("Page.enable");
+			await cdp.send("Page.navigate", { url: `http://127.0.0.1:${srvPort}/list.html` });
+		});
+		await new Promise((r) => setTimeout(r, 1500));
+		startAutoplay(PORT, TIMEOUT, "selftest-auto", {
+			listMatch: "list.html",
+			nextJs: "(async () => JSON.stringify(await (await fetch('/next')).json()))()",
+			everyMs: 1200,
+			doneTolerance: 1,
+		});
+		let st = autoplayStatus("selftest-auto");
+		for (let i = 0; i < 60 && st.running; i += 1) {
+			await new Promise((r) => setTimeout(r, 1000));
+			st = autoplayStatus("selftest-auto");
+		}
+		stopAutoplay("selftest-auto");
+		const tail = (st.log ?? []).slice(-4).map((x) => x.msg).join(" | ");
+		assert(st.doneCount === 3, `完成数不对: ${st.doneCount}（${tail}）`);
+		assert(String(st.lastReason).includes("队列空"), `结束原因不对: ${st.lastReason}`);
+		return `doneCount=3 · ${st.lastReason} · ${st.elapsedSec}s`;
 	} finally {
 		server.close();
 	}

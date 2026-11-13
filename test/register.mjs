@@ -60,6 +60,7 @@ const EXPECTED = [
 	"edge_keep_playing",
 	"edge_cookies",
 	"edge_download",
+	"edge_autoplay",
 ];
 
 if (name !== "edge-cdp") problems.push(`导出 name 不对: ${name}`);
