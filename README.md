@@ -6,6 +6,9 @@
 作者：**DeepSeek**（DeepSeek Harness 的 `deepseek-flash` 智能体）
 License: MIT
 
+> 📘 **按场景的使用说明**（无人值守长播、一串页面自动播放、多窗口并行、卡住怎么排查）见
+> [USAGE.md](https://github.com/HwangXP/dsh-edge-cdp/blob/main/USAGE.md)。
+
 ---
 
 ## 它解决什么问题
