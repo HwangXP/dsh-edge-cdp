@@ -1,21 +1,22 @@
 name: Publish to npm
 
-# 触发方式：
-#   1) 在 GitHub 上发布 Release（推荐）
-#   2) 手动 Run workflow
+# 触发方式：**仅手动**（Actions → Publish to npm → Run workflow）。
 #
-# 认证方式：npm Trusted Publishing（OIDC）
-#   —— 不需要 NPM_TOKEN，不需要 2FA 验证码。
-#   前提：在 npmjs.com 的包设置里把「本仓库 + 本文件名」登记为 Trusted Publisher。
+# 为什么去掉「Release 触发」：
+#   0.2.0 起改用手动发版。npm 的 Trusted Publisher 配置区在包设置页至今不显示，
+#   走 Release 触发会让 CI 必定失败并标红；而且手动已经发过的版本再跑会撞版本冲突。
+#
+# 为什么 CI 发版走不通（2026-11 实测）：
+#   - Trusted Publishing 需要先在 npmjs.com 包设置里登记「本仓库 + 本文件名」，该区块没渲染出来；
+#   - 账号只有 Security Key（无 TOTP），命令行拿不到 6 位码，只能走浏览器 WebAuthn 认证；
+#   - 手动发版的正确姿势见 README「发版」一节：必须在真 TTY 里跑（非 TTY 时认证链接会被遮成 ***）。
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # 必需：向 npm 换取 OIDC 令牌
+  id-token: write # 只有走 OIDC 才需要；手动发版不经过这里
 
 jobs:
   publish:
@@ -27,12 +28,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 24 # 自带 npm 11.x，支持 OIDC 可信发布
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Show version
         run: node -p "'publishing ' + require('./package.json').name + '@' + require('./package.json').version"
 
+      - name: Skip when this version is already on npm
+        id: check
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VER" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$NAME@$VER 已经发布过，跳过"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish
+        if: steps.check.outputs.exists == 'false'
         # Trusted Publishing：不要设置 NODE_AUTH_TOKEN，npm 会自动走 OIDC
         run: npm publish --provenance --access public
