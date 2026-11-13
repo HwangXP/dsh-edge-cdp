@@ -48,7 +48,7 @@ edge_keep_playing({op: "stop"})
 edge_autoplay({
   op: "start",
   listMatch: "<列表页 URL 子串>",
-  nextJs: "<在列表页上求值，返回 {'{'}url,title{'}'} 或 null>",
+  nextJs: "<在列表页上求值，返回 {url,title} 或 null>",
   everyMs: 5000
 })
 ```
